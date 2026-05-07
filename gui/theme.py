@@ -81,6 +81,49 @@ def severity_color(severity):
     }.get(severity, C.MUTED)
 
 
+def section_header(parent, title: str, subtitle: str = None) -> ctk.CTkFrame:
+    """Standardized section header for all tabs."""
+    frame = ctk.CTkFrame(parent, fg_color="transparent")
+
+    title_label = ctk.CTkLabel(
+        frame,
+        text=title,
+        font=(FONT_FAMILY, 20, "bold"),
+        text_color=C.TEXT
+    )
+    title_label.pack(anchor="w")
+
+    if subtitle:
+        sub_label = ctk.CTkLabel(
+            frame,
+            text=subtitle,
+            font=(FONT_FAMILY, 13),
+            text_color=C.MUTED
+        )
+        sub_label.pack(anchor="w", pady=(2, 0))
+
+    separator = ctk.CTkFrame(frame, height=1, fg_color=C.BORDER)
+    separator.pack(fill="x", pady=(12, 0))
+
+    return frame
+
+
+def card(parent, padding: int = 16) -> ctk.CTkFrame:
+    """Standard surface card."""
+    return ctk.CTkFrame(parent, fg_color=C.SURFACE, corner_radius=8)
+
+
+def status_pill(parent, text: str, color: str) -> ctk.CTkLabel:
+    """A colored pill-shaped status indicator."""
+    return ctk.CTkLabel(
+        parent,
+        text=f"  {text}  ",
+        font=(FONT_FAMILY, 11, "bold"),
+        fg_color=color,
+        text_color=C.BG,
+        corner_radius=12
+    )
+
 def stat_card(parent, label_text, value_text, unit=""):
     """Create a stat card widget; returns (frame, value_label) for live updates."""
     frame = card_frame(parent)

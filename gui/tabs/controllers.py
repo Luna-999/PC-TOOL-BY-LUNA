@@ -2,7 +2,7 @@
 import threading
 import customtkinter as ctk
 
-from gui.theme import C, FONT_FAMILY, heading, card_frame, primary_button, muted_label
+from gui.theme import C, FONT_FAMILY, section_header, card, primary_button, muted_label
 
 
 class ControllersTab(ctk.CTkFrame):
@@ -11,7 +11,7 @@ class ControllersTab(ctk.CTkFrame):
         self._build()
 
     def _build(self):
-        heading(self, "Controllers").pack(padx=24, pady=(24, 4), anchor="w")
+        section_header(self, "Controllers").pack(padx=24, pady=(24, 4), anchor="w")
         muted_label(self, "Detect and analyze HID game controllers"
                     ).pack(padx=24, pady=(0, 14), anchor="w")
 
@@ -68,7 +68,7 @@ class ControllersTab(ctk.CTkFrame):
             return
 
         for c in controllers:
-            card = card_frame(self._scroll)
+            card = card(self._scroll)
             card.pack(fill="x", pady=(0, 8))
 
             # Name

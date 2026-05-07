@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 import customtkinter as ctk
 
-from gui.theme import C, FONT_FAMILY, heading, card_frame, primary_button, \
+from gui.theme import C, FONT_FAMILY, section_header, card, primary_button, \
     secondary_button, danger_button, muted_label
 
 
@@ -15,7 +15,7 @@ class DevicesTab(ctk.CTkFrame):
         self._build()
 
     def _build(self):
-        heading(self, "Devices / MSI Mode").pack(padx=24, pady=(24, 4), anchor="w")
+        section_header(self, "Devices / MSI Mode").pack(padx=24, pady=(24, 4), anchor="w")
         muted_label(self, "Enable Message Signaled Interrupts for PCI devices"
                     ).pack(padx=24, pady=(0, 14), anchor="w")
 
@@ -32,7 +32,7 @@ class DevicesTab(ctk.CTkFrame):
         self._status_lbl.pack(side="left", padx=16)
 
         # ── Device table ──
-        table_card = card_frame(self)
+        table_card = card(self)
         table_card.pack(padx=24, pady=(16, 16), fill="both", expand=True)
 
         ctk.CTkLabel(table_card, text="PCI DEVICES",

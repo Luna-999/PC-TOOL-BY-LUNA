@@ -2,7 +2,7 @@
 import threading
 import customtkinter as ctk
 
-from gui.theme import C, FONT_FAMILY, heading, card_frame, primary_button, \
+from gui.theme import C, FONT_FAMILY, section_header, card, primary_button, \
     danger_button, muted_label
 
 
@@ -12,7 +12,7 @@ class ProfilesTab(ctk.CTkFrame):
         self._build()
 
     def _build(self):
-        heading(self, "Profiles").pack(padx=24, pady=(24, 4), anchor="w")
+        section_header(self, "Profiles").pack(padx=24, pady=(24, 4), anchor="w")
         muted_label(self, "Save and apply bulk optimization settings"
                     ).pack(padx=24, pady=(0, 14), anchor="w")
 
@@ -49,7 +49,7 @@ class ProfilesTab(ctk.CTkFrame):
             self._status_lbl.configure(text=f"Error: {e}", text_color=C.DANGER)
 
     def _render_profile_card(self, p):
-        card = card_frame(self._scroll)
+        card = card(self._scroll)
         card.pack(fill="x", pady=(0, 12))
 
         hdr = ctk.CTkFrame(card, fg_color="transparent")
@@ -91,7 +91,7 @@ class ProfilesTab(ctk.CTkFrame):
         self._status_lbl.configure(text="", text_color=C.MUTED)
 
         # Create a live steps panel at the top of the scroll area
-        self._steps_card = card_frame(self._scroll)
+        self._steps_card = card(self._scroll)
         # Insert at position 0 so it appears at the top
         self._steps_card.pack(fill="x", pady=(0, 12), before=self._scroll.winfo_children()[0]
                               if self._scroll.winfo_children() else None)

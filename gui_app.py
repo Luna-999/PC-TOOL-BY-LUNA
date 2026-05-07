@@ -71,12 +71,33 @@ class OpToolApp(ctk.CTk):
         self.nav_buttons = {}
 
         for name in self.tab_classes:
-            btn = ctk.CTkButton(self.sidebar, text=name, anchor="w",
-                                fg_color="transparent", text_color=C.MUTED,
-                                hover_color=C.SURFACE_HI, corner_radius=6,
-                                font=(FONT_FAMILY, 14, "bold"), height=40,
-                                command=lambda n=name: self.select_tab(n))
-            btn.pack(padx=16, pady=4, fill="x")
+            if name == "Restore":
+                restore_container = ctk.CTkFrame(self.sidebar, fg_color="transparent")
+                restore_container.pack(fill="x", padx=8, pady=2)
+                btn = ctk.CTkButton(restore_container, text=name, anchor="w",
+                                    fg_color="transparent", text_color=C.MUTED,
+                                    hover_color=C.SURFACE_HI, corner_radius=6,
+                                    font=(FONT_FAMILY, 14, "bold"), height=40,
+                                    command=lambda n=name: self.select_tab(n))
+                btn.pack(side="left", fill="x", expand=True)
+
+                self._restore_badge = ctk.CTkLabel(
+                    restore_container,
+                    text="0",
+                    font=(FONT_FAMILY, 10, "bold"),
+                    fg_color=C.DANGER,
+                    text_color="white",
+                    corner_radius=10,
+                    width=20, height=20
+                )
+            else:
+                btn = ctk.CTkButton(self.sidebar, text=name, anchor="w",
+                                    fg_color="transparent", text_color=C.MUTED,
+                                    hover_color=C.SURFACE_HI, corner_radius=6,
+                                    font=(FONT_FAMILY, 14, "bold"), height=40,
+                                    command=lambda n=name: self.select_tab(n))
+                btn.pack(padx=16, pady=4, fill="x")
+
             self.nav_buttons[name] = btn
 
         # ── BUG 5: Pre-instantiate all tabs (hide/show, never destroy) ──
@@ -96,6 +117,14 @@ class OpToolApp(ctk.CTk):
 
         # ── Clean shutdown ──
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _update_restore_badge(self, count: int):
+        """Show/hide and update the restore badge count."""
+        if count > 0:
+            self._restore_badge.configure(text=str(count))
+            self._restore_badge.pack(side="right", padx=4)
+        else:
+            self._restore_badge.pack_forget()
 
     # ── OPT 1: Event Bus ──────────────────────────────
 
@@ -148,12 +177,12 @@ class OpToolApp(ctk.CTk):
                     "active_changes": changes,
                     "timestamp": time.time()
                 }
+
                 self.after(0, lambda s=snapshot: self.publish("system_snapshot", s))
+                self.after(0, lambda c=changes: self._update_restore_badge(c))
             except Exception:
                 pass
-
             time.sleep(2)
-
     # ── Clean shutdown ────────────────────────────────
 
     def _on_close(self):

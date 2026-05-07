@@ -1,7 +1,7 @@
 """CTF tab — suppress/restore CTF (Text Framework) service."""
 import threading
 import customtkinter as ctk
-from gui.theme import C, FONT_FAMILY, heading, card_frame, primary_button, \
+from gui.theme import C, FONT_FAMILY, section_header, card, primary_button, \
     danger_button, muted_label
 
 
@@ -12,11 +12,11 @@ class CtfTab(ctk.CTkFrame):
         self._check_status()
 
     def _build(self):
-        heading(self, "CTF / TSF Suppression").pack(padx=24, pady=(24, 4), anchor="w")
+        section_header(self, "CTF / TSF Suppression").pack(padx=24, pady=(24, 4), anchor="w")
         muted_label(self, "Disable the Collaborative Translation Framework to reduce input latency"
                     ).pack(padx=24, pady=(0, 14), anchor="w")
 
-        status_card = card_frame(self)
+        status_card = card(self)
         status_card.pack(padx=24, pady=(0, 12), fill="x")
         ctk.CTkLabel(status_card, text="CTF STATUS", font=(FONT_FAMILY, 11, "bold"),
                      text_color=C.MUTED).pack(padx=16, pady=(12, 4), anchor="w")
@@ -39,7 +39,7 @@ class CtfTab(ctk.CTkFrame):
                                         text_color=C.MUTED)
         self._action_lbl.pack(side="left", padx=16)
 
-        steps_card = card_frame(self)
+        steps_card = card(self)
         steps_card.pack(padx=24, pady=(0, 12), fill="x")
         ctk.CTkLabel(steps_card, text="SUPPRESSION STEPS", font=(FONT_FAMILY, 11, "bold"),
                      text_color=C.MUTED).pack(padx=16, pady=(12, 8), anchor="w")
@@ -64,7 +64,7 @@ class CtfTab(ctk.CTkFrame):
                          text_color=C.TEXT).pack(side="left", padx=4)
             self._step_labels[key] = dot
 
-        info_card = card_frame(self)
+        info_card = card(self)
         info_card.pack(padx=24, pady=(0, 16), fill="x")
         ctk.CTkLabel(info_card, text="ℹ  CTF suppression disables Windows text services. "
                      "A system restore point is created before any changes.",

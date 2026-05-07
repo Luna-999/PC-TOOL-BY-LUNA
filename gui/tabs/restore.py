@@ -3,7 +3,7 @@ import threading
 import subprocess
 import customtkinter as ctk
 
-from gui.theme import C, FONT_FAMILY, heading, card_frame, primary_button, \
+from gui.theme import C, FONT_FAMILY, section_header, card, primary_button, \
     danger_button, secondary_button, muted_label
 
 
@@ -24,7 +24,7 @@ class RestoreTab(ctk.CTkFrame):
             pass
 
     def _build(self):
-        heading(self, "Restore").pack(padx=24, pady=(24, 4), anchor="w")
+        section_header(self, "Restore").pack(padx=24, pady=(24, 4), anchor="w")
 
         desc_row = ctk.CTkFrame(self, fg_color="transparent")
         desc_row.pack(padx=24, fill="x", pady=(0, 14))
@@ -101,7 +101,7 @@ class RestoreTab(ctk.CTkFrame):
                 return
 
             for s in sessions:
-                card = card_frame(self._scroll)
+                card = card(self._scroll)
                 card.pack(fill="x", pady=(0, 12))
 
                 hdr = ctk.CTkFrame(card, fg_color="transparent")

@@ -1164,3 +1164,43 @@ dist\OPTOOL\           # Stale build artifact directory — removed to unblock b
 ```
 
 
+
+
+## Amendment 4 — v3.0 Improvements
+
+**Date:** 2026-05-07
+**Time:** 16:16 EST
+
+### Items implemented
+
+1. **Limitation 4 RESOLVED** — CTF service start type now read via
+   win32service.QueryServiceConfig() before suppression and restored
+   to exact original value. No longer hardcodes SERVICE_AUTO_START.
+
+2. **MeasureSleep added** — ridge/measure_sleep.py implements actual
+   timer resolution measurement via sleep precision testing. Timer tab
+   now shows effective vs reported resolution, overshoot stats, and a
+   grade (EXCELLENT/GOOD/ACCEPTABLE/POOR/CRITICAL).
+
+3. **Auto-build watcher** — dev_watcher.py watches all .py files and
+   triggers pyinstaller optool.spec --noconfirm on any change.
+   Run with python dev_watcher.py during development.
+
+4. **UI improvements**:
+   - Dashboard MetricCard widgets with colored severity bars
+   - Embedded matplotlib DPC graph (live, dark-themed)
+   - Sidebar restore badge showing active modification count
+   - Standardized section_header() and card() in gui/theme.py
+
+5. **New dependencies**: watchdog>=4.0.0, matplotlib>=3.8.0
+
+### Known remaining limitations (updated)
+
+~~6. Profile application does not roll back on partial failure.~~ RESOLVED Amendment 1
+~~4. CTF suppression does not track the service's original start type.~~ RESOLVED Amendment 4
+
+Remaining:
+1. VID/PID lookup table is not exhaustive (9 controllers)
+2. tracerpt column discovery breaks on non-English Windows
+3. Event bus has no unsubscribe mechanism
+5. Single poll thread interval is fixed at 2 seconds

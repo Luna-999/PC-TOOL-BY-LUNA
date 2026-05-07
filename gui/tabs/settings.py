@@ -1,7 +1,7 @@
 """Settings tab — user preferences and data management."""
 import customtkinter as ctk
 
-from gui.theme import C, FONT_FAMILY, heading, card_frame, primary_button, \
+from gui.theme import C, FONT_FAMILY, section_header, card, primary_button, \
     danger_button, muted_label
 
 
@@ -11,7 +11,7 @@ class SettingsTab(ctk.CTkFrame):
         self._build()
 
     def _build(self):
-        heading(self, "Settings").pack(padx=24, pady=(24, 4), anchor="w")
+        section_header(self, "Settings").pack(padx=24, pady=(24, 4), anchor="w")
         muted_label(self, "Application preferences and data management"
                     ).pack(padx=24, pady=(0, 14), anchor="w")
 
@@ -22,7 +22,7 @@ class SettingsTab(ctk.CTkFrame):
             s = {}
 
         # ── General Settings ──
-        gen_card = card_frame(self)
+        gen_card = card(self)
         gen_card.pack(padx=24, pady=(0, 12), fill="x")
         ctk.CTkLabel(gen_card, text="GENERAL", font=(FONT_FAMILY, 11, "bold"),
                      text_color=C.MUTED).pack(padx=16, pady=(12, 8), anchor="w")
@@ -38,7 +38,7 @@ class SettingsTab(ctk.CTkFrame):
                       ).pack(padx=16, pady=(0, 16), anchor="w")
 
         # ── DPC Settings ──
-        dpc_card = card_frame(self)
+        dpc_card = card(self)
         dpc_card.pack(padx=24, pady=(0, 12), fill="x")
         ctk.CTkLabel(dpc_card, text="DPC MONITORING", font=(FONT_FAMILY, 11, "bold"),
                      text_color=C.MUTED).pack(padx=16, pady=(12, 8), anchor="w")
@@ -53,7 +53,7 @@ class SettingsTab(ctk.CTkFrame):
         self._threshold.pack(side="left")
 
         # ── Data Management ──
-        data_card = card_frame(self)
+        data_card = card(self)
         data_card.pack(padx=24, pady=(0, 16), fill="x")
         ctk.CTkLabel(data_card, text="DATA MANAGEMENT", font=(FONT_FAMILY, 11, "bold"),
                      text_color=C.MUTED).pack(padx=16, pady=(12, 8), anchor="w")

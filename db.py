@@ -317,3 +317,40 @@ def save_settings(updates):
     os.makedirs(os.path.dirname(SETTINGS_FILE), exist_ok=True)
     with open(SETTINGS_FILE, 'w') as f:
         json.dump(current, f, indent=2)
+
+
+# ─── Timer Measurements ────────────────────────────
+
+def save_timer_measurement(result: dict):
+    """Save a timer measurement result to the database."""
+    conn = _get_conn()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS timer_measurements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            measured_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            effective_resolution_ms REAL,
+            reported_resolution_ms REAL,
+            avg_overshoot_ms REAL,
+            max_overshoot_ms REAL,
+            std_dev_ms REAL,
+            accuracy_percent REAL,
+            grade TEXT,
+            iterations INTEGER
+        )
+    """)
+    conn.execute("""
+        INSERT INTO timer_measurements
+        (effective_resolution_ms, reported_resolution_ms, avg_overshoot_ms,
+         max_overshoot_ms, std_dev_ms, accuracy_percent, grade, iterations)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        result.get("effective_resolution_ms", 0),
+        result.get("reported_resolution_ms", 0),
+        result.get("avg_overshoot_ms", 0),
+        result.get("max_overshoot_ms", 0),
+        result.get("std_dev_ms", 0),
+        result.get("accuracy_percent", 0),
+        result.get("grade", ""),
+        result.get("iterations", 0)
+    ))
+    conn.commit()

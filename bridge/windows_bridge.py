@@ -210,12 +210,38 @@ def kill_process_by_name(exe_name):
     return {"success": True, "killed_count": killed}
 
 
+def _get_service_start_type(service_name: str) -> int:
+    """Read a service's current StartType. Returns win32service constant."""
+    try:
+        scm = win32service.OpenSCManager(None, None, win32service.SC_MANAGER_CONNECT)
+        svc = win32service.OpenService(scm, service_name, win32service.SERVICE_QUERY_CONFIG)
+        config = win32service.QueryServiceConfig(svc)
+        win32service.CloseServiceHandle(svc)
+        win32service.CloseServiceHandle(scm)
+        return config[1]  # index 1 = StartType
+    except Exception as e:
+        logger.warning(f"Could not read service start type for {service_name}: {e}")
+        return win32service.SERVICE_AUTO_START  # safe fallback
+
+
 def suppress_ctf():
     """
     Full CTF/TSF suppression sequence.
     Uses tracked writes to ensure registry restoration (BUG 2).
     """
     results = {}
+    
+    # Read and log original service start type (Limitation 4 Fix)
+    original_start_type = _get_service_start_type("TabletInputService")
+    reg_write_tracked(
+        winreg.HKEY_LOCAL_MACHINE,
+        "SYSTEM\\CurrentControlSet\\Services\\TabletInputService",
+        "Start",
+        win32service.SERVICE_DISABLED,
+        change_type="ctf_service",
+        device_id=None
+    )
+
     results['reg_input_service'] = reg_write_tracked(
         winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Input",
         "InputServiceEnabled", 0, change_type="ctf"
@@ -247,8 +273,16 @@ def restore_ctf():
         winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Input",
         "InputServiceEnabledForCCI", 1
     )
+    
+    # Restore actual original service start type
+    orig_start, _ = reg_read(
+        winreg.HKEY_LOCAL_MACHINE,
+        "SYSTEM\\CurrentControlSet\\Services\\TabletInputService",
+        "Start"
+    )
+    start_type = orig_start if orig_start is not None else win32service.SERVICE_AUTO_START
     results['enable_service'] = set_service_start_type(
-        "TabletInputService", win32service.SERVICE_AUTO_START
+        "TabletInputService", start_type
     )
     results['start_service'] = start_service("TabletInputService")
     return results

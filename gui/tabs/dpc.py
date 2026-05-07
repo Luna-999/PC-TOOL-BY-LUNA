@@ -2,7 +2,7 @@
 import threading
 import customtkinter as ctk
 
-from gui.theme import C, FONT_FAMILY, heading, card_frame, primary_button, \
+from gui.theme import C, FONT_FAMILY, section_header, card, primary_button, \
     muted_label, label, severity_color
 
 
@@ -13,7 +13,7 @@ class DpcTab(ctk.CTkFrame):
         self._build()
 
     def _build(self):
-        heading(self, "DPC Latency Monitor").pack(padx=24, pady=(24, 4), anchor="w")
+        section_header(self, "DPC Latency Monitor").pack(padx=24, pady=(24, 4), anchor="w")
         muted_label(self, "Identify drivers causing system stutter and input lag"
                     ).pack(padx=24, pady=(0, 18), anchor="w")
 

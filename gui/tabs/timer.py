@@ -2,7 +2,7 @@
 import threading
 import customtkinter as ctk
 
-from gui.theme import C, FONT_FAMILY, heading, card_frame, primary_button, \
+from gui.theme import C, FONT_FAMILY, section_header, card, primary_button, \
     danger_button, muted_label
 
 
@@ -20,15 +20,143 @@ class TimerTab(ctk.CTkFrame):
     def __init__(self, parent):
         super().__init__(parent, fg_color=C.BG)
         self._build()
+        self._build_measure_section()
         self._refresh_current()
 
+    def _build_measure_section(self):
+        """Build the MeasureSleep measurement UI."""
+        section = ctk.CTkFrame(self, fg_color=C.SURFACE, corner_radius=8)
+        section.pack(fill="x", padx=20, pady=(0, 16))
+
+        header = ctk.CTkLabel(
+            section,
+            text="ACTUAL RESOLUTION MEASUREMENT",
+            font=(FONT_FAMILY, 11),
+            text_color=C.MUTED
+        )
+        header.pack(anchor="w", padx=16, pady=(12, 4))
+
+        subtitle = ctk.CTkLabel(
+            section,
+            text="Measures what the system actually achieves vs what it reports",
+            font=(FONT_FAMILY, 12),
+            text_color=C.MUTED
+        )
+        subtitle.pack(anchor="w", padx=16, pady=(0, 8))
+
+        # Progress bar
+        self._measure_progress = ctk.CTkProgressBar(section, height=6)
+        self._measure_progress.pack(fill="x", padx=16, pady=(0, 8))
+        self._measure_progress.set(0)
+
+        # Results grid
+        results_frame = ctk.CTkFrame(section, fg_color="transparent")
+        results_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        self._measure_labels = {}
+        metrics = [
+            ("Effective Resolution", "effective_resolution_ms", "ms"),
+            ("Reported Resolution", "reported_resolution_ms", "ms"),
+            ("Avg Overshoot", "avg_overshoot_ms", "ms"),
+            ("Max Overshoot", "max_overshoot_ms", "ms"),
+            ("Jitter (StdDev)", "std_dev_ms", "ms"),
+            ("Accuracy", "accuracy_percent", "%"),
+            ("Grade", "grade", ""),
+        ]
+
+        for i, (label, key, unit) in enumerate(metrics):
+            row = i // 2
+            col = i % 2
+            frame = ctk.CTkFrame(results_frame, fg_color=C.SURFACE_HI, corner_radius=6)
+            frame.grid(row=row, column=col, padx=4, pady=4, sticky="ew")
+            results_frame.columnconfigure(col, weight=1)
+
+            ctk.CTkLabel(
+                frame, text=label,
+                font=(FONT_FAMILY, 11), text_color=C.MUTED
+            ).pack(anchor="w", padx=10, pady=(8, 0))
+
+            val_label = ctk.CTkLabel(
+                frame, text="—",
+                font=(FONT_FAMILY, 18, "bold"), text_color=C.TEXT
+            )
+            val_label.pack(anchor="w", padx=10, pady=(0, 8))
+            self._measure_labels[key] = (val_label, unit)
+
+        # Run button
+        self._measure_btn = ctk.CTkButton(
+            section,
+            text="▶  Measure Actual Resolution (100 iterations)",
+            font=(FONT_FAMILY, 13),
+            fg_color=C.PRIMARY,
+            hover_color=C.ACCENT,
+            command=self._run_measurement
+        )
+        self._measure_btn.pack(padx=16, pady=(0, 16))
+
+    def _run_measurement(self):
+        """Run the MeasureSleep benchmark in a background thread."""
+        self._measure_btn.configure(state="disabled", text="Measuring...")
+        self._measure_progress.set(0)
+
+        def worker():
+            from bridge.measure_sleep import measure_actual_resolution
+
+            def progress(current, total):
+                self.after(0, lambda: self._measure_progress.set(current / total))
+
+            result = measure_actual_resolution(
+                target_sleep_ms=1.0,
+                iterations=100,
+                progress_callback=progress
+            )
+            self.after(0, lambda r=result: self._on_measurement_done(r))
+
+        import threading
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_measurement_done(self, result: dict):
+        """Update UI with measurement results."""
+        grade_colors = {
+            "EXCELLENT": C.SUCCESS,
+            "GOOD": C.SUCCESS,
+            "ACCEPTABLE": C.WARNING,
+            "POOR": C.WARNING,
+            "CRITICAL": C.DANGER
+        }
+
+        for key, (label, unit) in self._measure_labels.items():
+            val = result.get(key, "—")
+            if key == "grade":
+                color = grade_colors.get(str(val), C.TEXT)
+                label.configure(text=str(val), text_color=color)
+            elif isinstance(val, float):
+                label.configure(text=f"{val:.3f}{unit}", text_color=C.TEXT)
+            else:
+                label.configure(text=f"{val}{unit}", text_color=C.TEXT)
+
+        self._measure_progress.set(1.0)
+        self._measure_btn.configure(
+            state="normal",
+            text="▶  Measure Again"
+        )
+
+        # Save to DB for history
+        import db
+        db.save_timer_measurement(result)
+
+        # Publish result to event bus
+        app = self.winfo_toplevel()
+        if hasattr(app, 'publish'):
+            app.publish("timer_measured", result)
+
     def _build(self):
-        heading(self, "Timer Resolution").pack(padx=24, pady=(24, 4), anchor="w")
+        section_header(self, "Timer Resolution").pack(padx=24, pady=(24, 4), anchor="w")
         muted_label(self, "Set the Windows system timer resolution via NtSetTimerResolution"
                     ).pack(padx=24, pady=(0, 14), anchor="w")
 
         # ── Current resolution display ──
-        cur_card = card_frame(self)
+        cur_card = card(self)
         cur_card.pack(padx=24, pady=(0, 12), fill="x")
         ctk.CTkLabel(cur_card, text="CURRENT RESOLUTION",
                      font=(FONT_FAMILY, 11, "bold"),
@@ -46,7 +174,7 @@ class TimerTab(ctk.CTkFrame):
         self._cur_detail.pack(side="left", padx=20)
 
         # ── Slider control ──
-        ctrl_card = card_frame(self)
+        ctrl_card = card(self)
         ctrl_card.pack(padx=24, pady=(0, 12), fill="x")
         ctk.CTkLabel(ctrl_card, text="SET RESOLUTION",
                      font=(FONT_FAMILY, 11, "bold"),
@@ -96,7 +224,7 @@ class TimerTab(ctk.CTkFrame):
         self._status_lbl.pack(side="left", padx=16)
 
         # ── Info ──
-        info_card = card_frame(self)
+        info_card = card(self)
         info_card.pack(padx=24, pady=(0, 16), fill="x")
         ctk.CTkLabel(info_card, text="ℹ  Lower values reduce input latency but increase CPU usage. "
                      "The setting persists only while OP TOOL is running.",

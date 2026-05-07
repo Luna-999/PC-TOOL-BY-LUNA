@@ -3,7 +3,7 @@ import threading
 import customtkinter as ctk
 import psutil
 
-from gui.theme import C, FONT_FAMILY, heading, card_frame, primary_button, \
+from gui.theme import C, FONT_FAMILY, section_header, card, primary_button, \
     danger_button, muted_label
 
 
@@ -14,12 +14,12 @@ class AffinityTab(ctk.CTkFrame):
         self._build()
 
     def _build(self):
-        heading(self, "Interrupt Affinity").pack(padx=24, pady=(24, 4), anchor="w")
+        section_header(self, "Interrupt Affinity").pack(padx=24, pady=(24, 4), anchor="w")
         muted_label(self, "Pin device interrupts to specific CPU cores"
                     ).pack(padx=24, pady=(0, 14), anchor="w")
 
         # ── Core map display ──
-        core_card = card_frame(self)
+        core_card = card(self)
         core_card.pack(padx=24, pady=(0, 12), fill="x")
         ctk.CTkLabel(core_card, text="CPU CORE MAP",
                      font=(FONT_FAMILY, 11, "bold"),
@@ -50,7 +50,7 @@ class AffinityTab(ctk.CTkFrame):
             self._core_labels.append((cell, num, role))
 
         # ── Assignment controls ──
-        assign_card = card_frame(self)
+        assign_card = card(self)
         assign_card.pack(padx=24, pady=(0, 12), fill="x")
         ctk.CTkLabel(assign_card, text="PIN DEVICES TO CORES",
                      font=(FONT_FAMILY, 11, "bold"),
