@@ -1116,4 +1116,51 @@ gui/tabs/dashboard.py
   - Replaced platform.processor() with registry read for ProcessorNameString (+13, -1 lines)
 ```
 
+---
+
+## Amendment 3 — Rebuilt EXE After V2.0 Migration
+
+**Date:** 2026-05-07
+**Time:** ~03:15 EST
+**Reason:** The built EXE in `dist\OPTOOL\OPTOOL.exe` was stale from an earlier build cycle (pre-v2.0 migration). When the user attempted to rebuild, PyInstaller refused with: "The output directory ... is not empty." The `.spec` file was also flagged as unrecognized / "not a real spec" by the user, raising concern that it was corrupted or outdated. In reality, the `.spec` was already correct from the v2.0 migration, but the stale `dist\OPTOOL` directory was blocking the build entirely.
+
+### BEFORE — How it was broken
+
+After the v2.0 migration finalized and the `.gitignore` added, the project directory still held the old `dist\OPTOOL` folder on the local disk. When running `python -m PyInstaller optool.spec`, the build halted with:
+
+```
+ERROR: The output directory "C:\Users\Administrator\...\dist\OPTOOL" is not empty.
+Please remove all its contents or use the -y option
+```
+
+The user never saw the build complete, which led them to suspect the `.spec` itself was broken. No error in the `.spec` was needed to explain the behavior — it was a stale artifact lock.
+
+### AFTER — What was fixed
+
+No source code changes were needed. The fix was purely on the state of the distribution directory:
+
+1. Removed the stale `dist\OPTOOL` directory entirely.
+2. Ran `python -m PyInstaller optool.spec`.
+3. Build completed with:
+   ```
+   INFO: Building COLLECT COLLECT-00.toc completed successfully.
+   INFO: Build complete! The results are available in: C:\Users\...\dist
+   ```
+
+The resulting `dist\OPTOOL\OPTOOL.exe` was tested and confirmed to work.
+
+### CHAIN EFFECT
+
+- **Fresh EXE**: `dist\OPTOOL\OPTOOL.exe` now matches the current source tree (run.py → gui_app.py → all 10 tabs).
+- **`.spec` validation**: The `.spec` file was verified correct against all changes documented in Amendment 1 and Amendment 2.
+- **Build guardian**: Anytime `pyinstaller` complains about a non-empty `dist/OPTOOL`, the correct resolution is to remove `dist/` or use `--noconfirm`, not to rewrite the `.spec`.
+
+### File Change Log (Amendment 3)
+
+```
+optool.spec
+  - No edits required; file was already valid per v2.0 migration
+dist\OPTOOL\           # Stale build artifact directory — removed to unblock build
+```
+
 
