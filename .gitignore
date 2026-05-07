@@ -1,0 +1,26 @@
+# PyInstaller
+build/
+dist/
+*.spec.bak
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# SQLite database (user data, not source)
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+logs/
+*.log
+
+# Settings (user-specific)
+settings.json
+
+# OS
+.DS_Store
+Thumbs.db
