@@ -1,5 +1,4 @@
-"""Dashboard tab — status cards with live auto-refresh."""
-import threading
+"""Dashboard tab — subscribes to system_snapshot from the app poll thread (OPT 3)."""
 import customtkinter as ctk
 import psutil
 
@@ -10,7 +9,17 @@ class DashboardTab(ctk.CTkFrame):
     def __init__(self, parent):
         super().__init__(parent, fg_color=C.BG)
         self._build()
-        self._refresh()
+        self._populate_sys_info()
+
+        # OPT 3: Subscribe to the single poll thread's snapshot
+        self.after(100, self._subscribe)
+
+    def _subscribe(self):
+        try:
+            app = self.winfo_toplevel()
+            app.subscribe("system_snapshot", self._on_snapshot)
+        except Exception:
+            pass
 
     def _build(self):
         heading(self, "Dashboard").pack(padx=24, pady=(24, 4), anchor="w")
@@ -22,23 +31,19 @@ class DashboardTab(ctk.CTkFrame):
         grid.pack(padx=24, fill="x")
         grid.columnconfigure((0, 1, 2, 3), weight=1, uniform="col")
 
-        # Card 1 — Admin status
         f1, self._admin_val = stat_card(grid, "Privilege", "—")
         f1.grid(row=0, column=0, padx=(0, 8), pady=4, sticky="nsew")
 
-        # Card 2 — Timer resolution
         f2, self._timer_val = stat_card(grid, "Timer Resolution", "—", " ms")
         f2.grid(row=0, column=1, padx=4, pady=4, sticky="nsew")
 
-        # Card 3 — CTF status
         f3, self._ctf_val = stat_card(grid, "CTF / TSF", "—")
         f3.grid(row=0, column=2, padx=4, pady=4, sticky="nsew")
 
-        # Card 4 — Active mods
         f4, self._mods_val = stat_card(grid, "Active Modifications", "—")
         f4.grid(row=0, column=3, padx=(8, 0), pady=4, sticky="nsew")
 
-        # ── System info section ──
+        # System info section
         info_frame = card_frame(self)
         info_frame.pack(padx=24, pady=(20, 8), fill="x")
         ctk.CTkLabel(info_frame, text="SYSTEM INFO",
@@ -57,15 +62,32 @@ class DashboardTab(ctk.CTkFrame):
             lbl.pack(side="left")
             self._sys_labels[key] = lbl
 
-        # Spacer
         ctk.CTkLabel(info_frame, text="").pack(pady=4)
 
-        self._populate_sys_info()
+        # Initial admin check
+        import ctypes
+        is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+        self._admin_val.configure(
+            text="Administrator" if is_admin else "Standard",
+            text_color=C.SUCCESS if is_admin else C.DANGER)
 
     def _populate_sys_info(self):
         import platform
+        import winreg
         try:
-            self._sys_labels["CPU"].configure(text=platform.processor() or "Unknown")
+            # Read the real CPU brand name from registry (not platform.processor() which is useless)
+            try:
+                cpu_key = winreg.OpenKey(
+                    winreg.HKEY_LOCAL_MACHINE,
+                    r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+                )
+                cpu_name, _ = winreg.QueryValueEx(cpu_key, "ProcessorNameString")
+                winreg.CloseKey(cpu_key)
+                cpu_name = cpu_name.strip()
+            except Exception:
+                cpu_name = platform.processor() or "Unknown"
+
+            self._sys_labels["CPU"].configure(text=cpu_name)
             cores_l = psutil.cpu_count(logical=True)
             cores_p = psutil.cpu_count(logical=False)
             self._sys_labels["Cores"].configure(text=f"{cores_p}P / {cores_l}L")
@@ -76,51 +98,19 @@ class DashboardTab(ctk.CTkFrame):
         except Exception:
             pass
 
-    def _refresh(self):
-        """Auto-refresh status cards every 3 seconds."""
-        threading.Thread(target=self._fetch_status, daemon=True).start()
-        self.after(3000, self._refresh)
-
-    def _fetch_status(self):
-        import ctypes
-        is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
-
-        timer_ms = "—"
+    def _on_snapshot(self, snapshot):
+        """OPT 3: Receive data from the single app-level poll thread."""
         try:
-            from bridge.windows_bridge import get_timer_resolution
-            t = get_timer_resolution()
-            timer_ms = str(t["current_ms"])
-        except Exception:
-            pass
+            self._timer_val.configure(text=f"{snapshot['timer_ms']} ms")
+            self._mods_val.configure(text=str(snapshot['active_changes']))
 
-        ctf_status = "Unknown"
-        try:
             ctf_running = any(
                 p.name().lower() == "ctfmon.exe"
                 for p in psutil.process_iter(['name'])
             )
-            ctf_status = "Active" if ctf_running else "Suppressed"
-        except Exception:
-            pass
-
-        mod_count = 0
-        try:
-            from db import get_active_change_count
-            mod_count = get_active_change_count()
-        except Exception:
-            pass
-
-        # Schedule UI update on main thread
-        self.after(0, lambda: self._update_ui(is_admin, timer_ms, ctf_status, mod_count))
-
-    def _update_ui(self, is_admin, timer_ms, ctf_status, mod_count):
-        try:
-            self._admin_val.configure(
-                text="Administrator" if is_admin else "Standard",
-                text_color=C.SUCCESS if is_admin else C.DANGER)
-            self._timer_val.configure(text=f"{timer_ms} ms")
-            ctf_color = C.SUCCESS if ctf_status == "Suppressed" else C.WARNING
-            self._ctf_val.configure(text=ctf_status, text_color=ctf_color)
-            self._mods_val.configure(text=str(mod_count))
+            if ctf_running:
+                self._ctf_val.configure(text="Active", text_color=C.WARNING)
+            else:
+                self._ctf_val.configure(text="Suppressed", text_color=C.SUCCESS)
         except Exception:
             pass

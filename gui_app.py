@@ -1,6 +1,14 @@
-"""OP TOOL — Native CustomTkinter GUI Entry Shell."""
+"""OP TOOL — Native CustomTkinter GUI Entry Shell.
+
+BUG 5:  Tabs use pack_forget (hide) instead of destroy — background threads survive navigation.
+BUG 8:  launch() auto-elevates via ShellExecuteW instead of showing a MessageBox and dying.
+OPT 1:  Event bus (publish/subscribe) for cross-tab communication.
+OPT 3:  Single background poll thread owned by the app, all tabs subscribe to 'system_snapshot'.
+"""
 import sys
 import ctypes
+import time
+import threading
 import customtkinter as ctk
 
 from db import init_db
@@ -29,13 +37,15 @@ class OpToolApp(ctk.CTk):
         self.configure(fg_color=C.BG)
         self.minsize(900, 600)
 
+        # ── OPT 1: Event Bus ──
+        self._subscribers = {}
+
         # ── Sidebar ──
         self.sidebar = ctk.CTkFrame(self, width=220, fg_color=C.SURFACE,
                                     corner_radius=0, border_width=0)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
 
-        # Logo
         ctk.CTkLabel(self.sidebar, text="OP TOOL",
                      font=(FONT_FAMILY, 24, "bold"), text_color=C.PRIMARY
                      ).pack(pady=(30, 40))
@@ -44,8 +54,8 @@ class OpToolApp(ctk.CTk):
         self.main_content = ctk.CTkFrame(self, fg_color=C.BG, corner_radius=0)
         self.main_content.pack(side="right", fill="both", expand=True)
 
-        # ── Tabs Configuration ──
-        self.tabs = {
+        # ── Tab definitions ──
+        self.tab_classes = {
             "Dashboard": DashboardTab,
             "DPC Monitor": DpcTab,
             "Devices / MSI": DevicesTab,
@@ -59,9 +69,8 @@ class OpToolApp(ctk.CTk):
         }
 
         self.nav_buttons = {}
-        self.active_frame = None
 
-        for name in self.tabs:
+        for name in self.tab_classes:
             btn = ctk.CTkButton(self.sidebar, text=name, anchor="w",
                                 fg_color="transparent", text_color=C.MUTED,
                                 hover_color=C.SURFACE_HI, corner_radius=6,
@@ -70,36 +79,101 @@ class OpToolApp(ctk.CTk):
             btn.pack(padx=16, pady=4, fill="x")
             self.nav_buttons[name] = btn
 
-        # Default tab
+        # ── BUG 5: Pre-instantiate all tabs (hide/show, never destroy) ──
+        self._tab_instances = {}
+        for name, tab_class in self.tab_classes.items():
+            frame = tab_class(self.main_content)
+            self._tab_instances[name] = frame
+            # All start hidden
+
+        self._current_tab = None
         self.select_tab("Dashboard")
 
+        # ── OPT 3: Single background poll thread ──
+        self._polling = True
+        self._poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self._poll_thread.start()
+
+        # ── Clean shutdown ──
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ── OPT 1: Event Bus ──────────────────────────────
+
+    def publish(self, event_name, data=None):
+        """Fire an event to all subscribers (thread-safe via after())."""
+        for cb in self._subscribers.get(event_name, []):
+            try:
+                self.after(0, lambda c=cb, d=data: c(d))
+            except Exception:
+                pass
+
+    def subscribe(self, event_name, callback):
+        """Register a callback for an event."""
+        if event_name not in self._subscribers:
+            self._subscribers[event_name] = []
+        self._subscribers[event_name].append(callback)
+
+    # ── BUG 5: Tab switching via hide/show ────────────
+
     def select_tab(self, name):
-        # Update button styling
         for btn_name, btn in self.nav_buttons.items():
             if btn_name == name:
                 btn.configure(fg_color=C.SURFACE_HI, text_color=C.TEXT)
             else:
                 btn.configure(fg_color="transparent", text_color=C.MUTED)
 
-        # Swap frame
-        if self.active_frame:
-            self.active_frame.pack_forget()
-            self.active_frame.destroy()
+        # Hide all, show selected
+        for tab_name, frame in self._tab_instances.items():
+            if tab_name == name:
+                frame.pack(fill="both", expand=True)
+            else:
+                frame.pack_forget()
 
-        tab_class = self.tabs[name]
-        self.active_frame = tab_class(self.main_content)
-        self.active_frame.pack(fill="both", expand=True)
+        self._current_tab = name
+
+    # ── OPT 3: Single background poll thread ─────────
+
+    def _poll_loop(self):
+        while self._polling:
+            try:
+                from bridge.windows_bridge import get_timer_resolution
+                import db
+
+                timer = get_timer_resolution()
+                changes = db.get_active_change_count()
+
+                snapshot = {
+                    "timer_ms": timer["current_ms"],
+                    "timer_100ns": timer["current_100ns"],
+                    "active_changes": changes,
+                    "timestamp": time.time()
+                }
+                self.after(0, lambda s=snapshot: self.publish("system_snapshot", s))
+            except Exception:
+                pass
+
+            time.sleep(2)
+
+    # ── Clean shutdown ────────────────────────────────
+
+    def _on_close(self):
+        self._polling = False
+        self.destroy()
 
 
 def launch():
-    # Ensure Admin elevation
+    """
+    BUG 8: Auto-elevate via ShellExecuteW instead of showing a
+    MessageBox and dying.  run.py already handles this, but if
+    someone calls launch() directly we still do the right thing.
+    """
     if not ctypes.windll.shell32.IsUserAnAdmin():
-        ctypes.windll.user32.MessageBoxW(0, "OP TOOL requires Administrator privileges to modify system settings.", "Elevation Required", 0x10)
-        sys.exit(1)
+        ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", sys.executable, " ".join(sys.argv), None, 1
+        )
+        sys.exit(0)
 
-    # Initialize standalone SQLite Database
     init_db()
-
     app = OpToolApp()
     app.mainloop()
 

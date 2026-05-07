@@ -54,22 +54,48 @@ def reg_write(hive, path, value_name, data, reg_type=winreg.REG_DWORD):
         return False
 
 
+def reg_write_tracked(hive, path, value_name, new_data,
+                      reg_type=winreg.REG_DWORD,
+                      change_type="registry",
+                      device_id=None,
+                      profile_name=None):
+    """
+    Read original → log to change_log → write new value.
+    Use this instead of reg_write() for any change that needs to be reversible.
+    (OPT 4)
+    """
+    from bridge.change_log import record as clog_record
+
+    # Always read original first
+    original, _ = reg_read(hive, path, value_name)
+    original_stored = original if original is not None else 0
+
+    # Log before writing (BUG 1, 2, 3 fix via centralization)
+    clog_record(change_type, path, value_name,
+                original_value=original_stored,
+                applied_value=new_data,
+                device_id=device_id,
+                profile_name=profile_name)
+
+    # Write
+    return reg_write(hive, path, value_name, new_data, reg_type)
+
+
 def enable_msi(device_instance_id, vector_count=1):
     """
     Enable MSI interrupt mode for a PCI device.
-    MUST be called only after create_restore_point() has succeeded.
+    Uses reg_write_tracked to ensure restoration works (BUG 1).
     """
     reg_path = (
         f"SYSTEM\\CurrentControlSet\\Enum\\{device_instance_id}\\"
         f"Device Parameters\\Interrupt Management\\"
         f"MessageSignaledInterruptProperties"
     )
-    original, _ = reg_read(winreg.HKEY_LOCAL_MACHINE, reg_path, "MSISupported")
-    original = original if original is not None else 0
-    ok1 = reg_write(winreg.HKEY_LOCAL_MACHINE, reg_path, "MSISupported", 1)
-    ok2 = reg_write(winreg.HKEY_LOCAL_MACHINE, reg_path, "MessageNumberLimit", vector_count)
-    return {"success": ok1 and ok2, "original_value": original,
-            "error": None if (ok1 and ok2) else "Registry write failed"}
+    ok1 = reg_write_tracked(winreg.HKEY_LOCAL_MACHINE, reg_path, "MSISupported", 1, 
+                            change_type="msi", device_id=device_instance_id)
+    ok2 = reg_write_tracked(winreg.HKEY_LOCAL_MACHINE, reg_path, "MessageNumberLimit", vector_count,
+                            change_type="msi", device_id=device_instance_id)
+    return {"success": ok1 and ok2, "error": None if (ok1 and ok2) else "Registry write failed"}
 
 
 def disable_msi(device_instance_id, original_value=0):
@@ -84,23 +110,23 @@ def disable_msi(device_instance_id, original_value=0):
 
 
 def set_interrupt_affinity(device_instance_id, core_mask):
-    """Pin a device's interrupt handler to specific CPU cores."""
+    """
+    Pin a device's interrupt handler to specific CPU cores.
+    Uses tracked writes to ensure correct order and restoration (BUG 3).
+    """
     reg_path = (
         f"SYSTEM\\CurrentControlSet\\Enum\\{device_instance_id}\\"
         f"Device Parameters\\Interrupt Management\\Affinity Policy"
     )
-    mask_orig, _ = reg_read(winreg.HKEY_LOCAL_MACHINE, reg_path, "AssignmentSetOverride")
-    mask_orig_hex = mask_orig.hex() if isinstance(mask_orig, bytes) else "00"
-    ok1 = reg_write(winreg.HKEY_LOCAL_MACHINE, reg_path, "DevicePolicy", 4)
+    
+    ok1 = reg_write_tracked(winreg.HKEY_LOCAL_MACHINE, reg_path, "DevicePolicy", 4,
+                            change_type="affinity", device_id=device_instance_id)
+    
     mask_bytes = core_mask.to_bytes(8, byteorder='little')
-    ok2 = reg_write(winreg.HKEY_LOCAL_MACHINE, reg_path,
-                    "AssignmentSetOverride", mask_bytes, winreg.REG_BINARY)
-    if ok2:
-        from bridge.change_log import record as clog_record
-        from bridge.change_log import get_session
-        clog_record("affinity_binary", reg_path, "AssignmentSetOverride",
-                     mask_orig_hex, mask_bytes.hex(),
-                     device_id=device_instance_id)
+    ok2 = reg_write_tracked(winreg.HKEY_LOCAL_MACHINE, reg_path,
+                            "AssignmentSetOverride", mask_bytes, winreg.REG_BINARY,
+                            change_type="affinity_binary", device_id=device_instance_id)
+    
     return {"success": ok1 and ok2}
 
 
@@ -187,17 +213,16 @@ def kill_process_by_name(exe_name):
 def suppress_ctf():
     """
     Full CTF/TSF suppression sequence.
-    Disables input service registry keys, stops TabletInputService, kills ctfmon.exe.
-    MUST be called only after create_restore_point() has succeeded.
+    Uses tracked writes to ensure registry restoration (BUG 2).
     """
     results = {}
-    results['reg_input_service'] = reg_write(
+    results['reg_input_service'] = reg_write_tracked(
         winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Input",
-        "InputServiceEnabled", 0
+        "InputServiceEnabled", 0, change_type="ctf"
     )
-    results['reg_input_cci'] = reg_write(
+    results['reg_input_cci'] = reg_write_tracked(
         winreg.HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Input",
-        "InputServiceEnabledForCCI", 0
+        "InputServiceEnabledForCCI", 0, change_type="ctf"
     )
     results['stop_service'] = stop_service("TabletInputService")
     results['disable_service'] = set_service_start_type(
@@ -381,11 +406,11 @@ def get_pci_devices():
 # DPC MONITORING (wpr.exe + tracerpt.exe)
 # ─────────────────────────────────────
 
-def collect_dpc_data(duration_seconds=10):
+def collect_dpc_data(duration_seconds=10, critical_threshold_us=500, warning_threshold_us=100):
     """
     Collect DPC data using wpr.exe + tracerpt.exe.
     Returns list of per-driver stats dicts.
-    If wpr.exe fails, returns empty list with error — never simulated data.
+    Uses column discovery for robustness (BUG 6) and threshold parameters (OPT 6).
     """
     tmp = tempfile.mkdtemp()
     etl_path = os.path.join(tmp, "dpc_trace.etl")
@@ -420,16 +445,29 @@ def collect_dpc_data(duration_seconds=10):
         if os.path.exists(csv_path):
             with open(csv_path, encoding='utf-8', errors='ignore') as f:
                 reader = csv.DictReader(f)
+                
+                # Discover actual column names (BUG 6)
+                fieldnames = reader.fieldnames or []
+                task_col = next((c for c in fieldnames if 'task' in c.lower() or 'event' in c.lower()), None)
+                provider_col = next((c for c in fieldnames if 'provider' in c.lower() or 'source' in c.lower()), None)
+                duration_col = next((c for c in fieldnames if 'duration' in c.lower() or 'time' in c.lower() and 'clock' not in c.lower()), None)
+
+                if not all([task_col, provider_col, duration_col]):
+                    logger.warning(f"tracerpt CSV missing expected columns. Found: {fieldnames}. Skipping parse.")
+                    return []
+
                 for row in reader:
-                    if 'DPC' in row.get('Task Name', ''):
-                        provider = row.get('Provider Name', 'unknown')
-                        try:
-                            duration_us = float(row.get('Duration', 0)) / 10
-                        except (ValueError, TypeError):
-                            continue
-                        if provider not in driver_data:
-                            driver_data[provider] = []
-                        driver_data[provider].append(duration_us)
+                    task = row.get(task_col, '')
+                    if 'DPC' not in task.upper():
+                        continue
+                    provider = row.get(provider_col, 'unknown')
+                    try:
+                        duration_us = float(row.get(duration_col, 0)) / 10
+                    except (ValueError, TypeError):
+                        continue
+                    if provider not in driver_data:
+                        driver_data[provider] = []
+                    driver_data[provider].append(duration_us)
 
         # Aggregate
         results = []
@@ -439,12 +477,15 @@ def collect_dpc_data(duration_seconds=10):
             max_val = float(np.max(arr))
             std = float(np.std(arr))
             freq = len(arr)
-            if max_val > 500 or std > 200:
+            
+            # (OPT 6)
+            if max_val > critical_threshold_us or std > (critical_threshold_us * 0.4):
                 severity = 'critical'
-            elif max_val > 100 or std > 50:
+            elif max_val > warning_threshold_us or std > (warning_threshold_us * 0.5):
                 severity = 'warning'
             else:
                 severity = 'ok'
+                
             results.append({
                 "driver_name": driver,
                 "avg_us": round(avg, 2),
@@ -472,8 +513,26 @@ def collect_dpc_data(duration_seconds=10):
             pass
 
 
+# (BUG 4) Lookup Table
+_HIGH_POLLING_VIDS_PIDS = {
+    ("045E", "0B00"): 2000,  # Xbox Elite Series 2 via USB
+    ("045E", "02FD"): 500,   # Xbox One controller via USB
+    ("045E", "02E0"): 500,   # Xbox One S via USB
+    ("054C", "0CE6"): 1000,  # DualSense via USB
+    ("054C", "09CC"): 1000,  # DualShock 4 via USB
+    ("054C", "05C4"): 500,   # DualShock 4 v1
+    ("28DE", "1142"): 1000,  # Steam Controller
+    ("2DC8", "6006"): 2000,  # 8BitDo Pro 2 (2000Hz mode)
+    ("0F0D", "00C1"): 2000,  # HORI Fighting Commander (2000Hz)
+}
+
+_DEFAULT_POLLING_HZ = 125  # XInput default if unknown
+
 def get_hid_controllers():
-    """Enumerate HID game controllers via WMI."""
+    """
+    Enumerate HID game controllers via WMI.
+    Detects known high-polling rate controllers (BUG 4).
+    """
     script = """
     Get-WmiObject Win32_PnPEntity | Where-Object {
         $_.PNPDeviceID -like "HID\\*" -or $_.PNPDeviceID -like "USB\\VID_*"
@@ -503,11 +562,29 @@ def get_hid_controllers():
                                     vid = t[4:8]
                                 elif t.startswith("PID_"):
                                     pid = t[4:8]
+                
                 conn_type = "USB_WIRED"
                 if "BTHLE" in device_id or "BLUETOOTH" in device_id.upper():
                     conn_type = "BLUETOOTH"
                 elif "WIRELESS" in d.get("Name", "").upper():
                     conn_type = "USB_WIRELESS"
+
+                # Polling rate detection (BUG 4)
+                vid_upper = vid.upper()
+                pid_upper = pid.upper()
+                polling_hz = _HIGH_POLLING_VIDS_PIDS.get((vid_upper, pid_upper), _DEFAULT_POLLING_HZ)
+                
+                if conn_type == "BLUETOOTH":
+                    polling_hz = min(polling_hz, 125)
+
+                xinput_capped = 1 if polling_hz > 125 else 0
+
+                if polling_hz >= 2000:
+                    recommended_api = "RAW_HID"
+                elif polling_hz >= 250:
+                    recommended_api = "DIRECTINPUT"
+                else:
+                    recommended_api = "XINPUT"
 
                 controllers.append({
                     "device_path": device_id,
@@ -515,9 +592,9 @@ def get_hid_controllers():
                     "vid": vid,
                     "pid": pid,
                     "connection_type": conn_type,
-                    "polling_rate_hz": None,
-                    "xinput_capped": 1 if "xbox" in d.get("Name", "").lower() else 0,
-                    "recommended_api": "XINPUT" if "xbox" in d.get("Name", "").lower() else "RAW_HID"
+                    "polling_rate_hz": polling_hz,
+                    "xinput_capped": xinput_capped,
+                    "recommended_api": recommended_api
                 })
         except Exception:
             pass
