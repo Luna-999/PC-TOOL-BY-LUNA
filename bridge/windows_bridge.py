@@ -255,9 +255,17 @@ def suppress_ctf():
         "TabletInputService", win32service.SERVICE_DISABLED
     )
     results['kill_ctfmon'] = kill_process_by_name("ctfmon.exe")
-    still_running = any(
-        p.name().lower() == "ctfmon.exe" for p in psutil.process_iter(['name'])
-    )
+    
+    # Safe process check (Issue 9)
+    still_running = False
+    for p in psutil.process_iter(['name']):
+        try:
+            if p.info['name'] and p.info['name'].lower() == "ctfmon.exe":
+                still_running = True
+                break
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    
     results['verified'] = not still_running
     return results
 
