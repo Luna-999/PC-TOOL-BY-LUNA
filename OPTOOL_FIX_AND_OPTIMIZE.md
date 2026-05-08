@@ -558,6 +558,44 @@ def launch():
 ### CHAIN EFFECT
 
 - **User experience**: Double-click → UAC prompt → app opens. Same as every professional Windows system utility.
+
+---
+
+## BUG 9 — Polling loop fails silently and inefficiently
+
+### Status: FIXED
+### Files changed: `gui_app.py`
+
+---
+
+### BEFORE — How it was broken
+
+The `_poll_loop` in `gui_app.py` performed imports (`from bridge.windows_bridge import get_timer_resolution`, `import db`) inside a `while` loop that runs every 2 seconds. This is inefficient. Furthermore, it used a bare `except Exception: pass` block. If any error occurred (e.g., database lock, transient WMI failure), the loop would either spin in a tight failure cycle or die silently, stopping all live updates on the Dashboard.
+
+### AFTER — What was fixed
+
+Moved module imports outside the `while` loop to ensure they only happen once. Improved the exception handler to log errors via `print()` and maintained the `time.sleep(2)` delay even on failure to prevent resource exhaustion.
+
+---
+
+## BUG 10 — DPC Monitor fails when `wpr.exe` is already running or busy
+
+### Status: FIXED
+### Files changed: `bridge/windows_bridge.py`
+
+---
+
+### BEFORE — How it was broken
+
+`collect_dpc_data` would attempt to start `wpr.exe`. If a previous trace session was still active (due to a crash or interrupted scan), `wpr.exe -start` would return an error. The code would log the error and return `[]`, resulting in "No scan data available." Additionally, the `wpr.exe` and `tracerpt.exe` command windows would pop up briefly, disrupting the user experience.
+
+### AFTER — What was fixed
+
+1. Added `wpr.exe -cancel` before starting a new scan to guarantee a clean state.
+2. Switched the capture profile from `CPU` to `Latency` for better DPC/ISR event resolution.
+3. Added `CREATE_NO_WINDOW` (0x08000000) to all `subprocess.run` calls to hide console popups.
+4. Expanded tracking to include `INTERRUPT` (ISR) events in addition to `DPC` events.
+5. Added detailed logging of CSV headers and sample rows for troubleshooting.
 - **PyInstaller EXE**: The `.spec` file also has `uac_admin=True` which embeds a manifest requesting elevation, so the compiled EXE gets the shield icon automatically.
 
 ---

@@ -451,27 +451,37 @@ def collect_dpc_data(duration_seconds=10, critical_threshold_us=500, warning_thr
     csv_path = os.path.join(tmp, "dpc_trace.csv")
 
     try:
-        # Start recording
+        # Hide windows for cleaner experience
+        no_window = 0x08000000
+
+        # BUG FIX: Ensure any previous session is cancelled before starting a new one
+        subprocess.run(["wpr.exe", "-cancel"], capture_output=True, text=True, creationflags=no_window)
+
+        # Start recording - Use 'Latency' profile for better DPC/ISR tracking
         start_result = subprocess.run(
-            ["wpr.exe", "-start", "CPU", "-filemode"],
-            capture_output=True, text=True, timeout=10
+            ["wpr.exe", "-start", "Latency", "-filemode"],
+            capture_output=True, text=True, timeout=10, creationflags=no_window
         )
         if start_result.returncode != 0:
-            logger.error(f"wpr start failed: {start_result.stderr}")
-            return []
+            logger.error(f"wpr start failed (code {start_result.returncode}): {start_result.stderr}")
+            # Fallback to CPU if Latency profile is missing
+            subprocess.run(
+                ["wpr.exe", "-start", "CPU", "-filemode"],
+                capture_output=True, text=True, timeout=10, creationflags=no_window
+            )
 
         time.sleep(duration_seconds)
 
         # Stop and save
         subprocess.run(
             ["wpr.exe", "-stop", etl_path],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, timeout=30, creationflags=no_window
         )
 
         # Convert to CSV
         subprocess.run(
             ["tracerpt.exe", etl_path, "-o", csv_path, "-of", "CSV", "-y"],
-            capture_output=True, text=True, timeout=60
+            capture_output=True, text=True, timeout=60, creationflags=no_window
         )
 
         # Parse CSV for DPC events
@@ -482,6 +492,8 @@ def collect_dpc_data(duration_seconds=10, critical_threshold_us=500, warning_thr
                 
                 # Discover actual column names (BUG 6)
                 fieldnames = reader.fieldnames or []
+                logger.info(f"DPC CSV fieldnames: {fieldnames}")
+
                 task_col = next((c for c in fieldnames if 'task' in c.lower() or 'event' in c.lower()), None)
                 provider_col = next((c for c in fieldnames if 'provider' in c.lower() or 'source' in c.lower()), None)
                 duration_col = next((c for c in fieldnames if 'duration' in c.lower() or 'time' in c.lower() and 'clock' not in c.lower()), None)
@@ -490,18 +502,31 @@ def collect_dpc_data(duration_seconds=10, critical_threshold_us=500, warning_thr
                     logger.warning(f"tracerpt CSV missing expected columns. Found: {fieldnames}. Skipping parse.")
                     return []
 
+                row_count = 0
                 for row in reader:
+                    row_count += 1
                     task = row.get(task_col, '')
-                    if 'DPC' not in task.upper():
+                    
+                    # Log first few rows for debugging
+                    if row_count < 5:
+                        logger.info(f"DPC Sample Row: {row}")
+
+                    if 'DPC' not in task.upper() and 'INTERRUPT' not in task.upper():
                         continue
+                    
                     provider = row.get(provider_col, 'unknown')
                     try:
+                        # Duration in tracerpt CSV is usually in 100ns units or similar
+                        # We want us, so we divide accordingly.
                         duration_us = float(row.get(duration_col, 0)) / 10
                     except (ValueError, TypeError):
                         continue
+                    
                     if provider not in driver_data:
                         driver_data[provider] = []
                     driver_data[provider].append(duration_us)
+                
+                logger.info(f"Processed {row_count} rows, found {len(driver_data)} drivers with DPC/Interrupt data.")
 
         # Aggregate
         results = []

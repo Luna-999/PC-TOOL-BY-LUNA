@@ -8,9 +8,10 @@ OP TOOL has migrated from a Flask/Web architecture to a **Native CustomTkinter G
 - **Standalone Data Layer**: `db.py` handles all SQLite operations directly (no Flask-SQLAlchemy).
 - **Bridge Pattern**: `bridge/windows_bridge.py` provides a clean interface for Windows-specific operations (Registry, Services, WMI, DPC).
 - **Atomic Registry Writes**: Use `reg_write_tracked()` in `windows_bridge.py` for all reversible changes. This ensures every write is preceded by a log entry in the `change_log` table.
+- **Robust DPC Monitoring**: Uses `wpr.exe` with the `Latency` profile and `tracerpt.exe` to track both DPCs and ISRs (Interrupts). Automatically cancels lingering sessions before starting.
 - **Global Event Bus**: `gui_app.py` implements a publish/subscribe system for cross-tab communication.
 - **Persistent Tabs**: Tabs use `pack_forget()` for navigation instead of `destroy()`. This allows background threads (like DPC scans) to survive tab switching.
-- **Single Polling Thread**: The main app owns a single background thread that publishes a `system_snapshot` event every 2 seconds.
+- **Single Polling Thread**: The main app owns a single background thread that publishes a `system_snapshot` event every 2 seconds. Optimized with external imports and error logging.
 
 ## Workflows & Conventions
 

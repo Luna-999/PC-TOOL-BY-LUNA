@@ -163,11 +163,11 @@ class OpToolApp(ctk.CTk):
     # ── OPT 3: Single background poll thread ─────────
 
     def _poll_loop(self):
+        from bridge.windows_bridge import get_timer_resolution
+        import db
+
         while self._polling:
             try:
-                from bridge.windows_bridge import get_timer_resolution
-                import db
-
                 timer = get_timer_resolution()
                 changes = db.get_active_change_count()
 
@@ -180,8 +180,10 @@ class OpToolApp(ctk.CTk):
 
                 self.after(0, lambda s=snapshot: self.publish("system_snapshot", s))
                 self.after(0, lambda c=changes: self._update_restore_badge(c))
-            except Exception:
-                pass
+            except Exception as e:
+                # Log error and avoid tight retry loop on failure
+                print(f"Polling loop error: {e}")
+            
             time.sleep(2)
     # ── Clean shutdown ────────────────────────────────
 
@@ -196,6 +198,12 @@ def launch():
     MessageBox and dying.  run.py already handles this, but if
     someone calls launch() directly we still do the right thing.
     """
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
     if not ctypes.windll.shell32.IsUserAnAdmin():
         ctypes.windll.shell32.ShellExecuteW(
             None, "runas", sys.executable, " ".join(sys.argv), None, 1
